@@ -26,6 +26,7 @@
   "scripts": {
     "dsh-gui-trash": "electron electron/",
     "start": "electron electron/",
+    "prebuild:exe": "node -e \"const fs=require('fs');for(const p of ['dist/win-unpacked','dist/win-unpacked.tmp','dist/dsh-gui-trash.exe'])try{fs.rmSync(p,{recursive:true,force:true})}catch(e){}\"",
     "build:exe": "electron-builder"
   },
   "dsh": {
