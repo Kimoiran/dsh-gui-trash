@@ -273,21 +273,25 @@ function openWindow() {
   })
   win.webContents.on('did-finish-load', () => {
     console.log(`[load finished] ${win.webContents.getURL()}`)
-    // 诊断白屏：加载完成后隔几秒探一下 DOM 状态。
     if (!win.webContents.getURL().startsWith('http://127.0.0.1:')) return
     for (const delay of [2500, 8000]) {
       setTimeout(() => {
         if (win === null || win.isDestroyed()) return
         win.webContents.executeJavaScript(`(() => {
-          const root = document.getElementById('root') || document.getElementById('app') || document.body
+          const root = document.getElementById('root')
           return {
             t: Date.now(),
             readyState: document.readyState,
             bodyLen: document.body ? document.body.innerHTML.length : -1,
-            rootTag: root ? root.tagName : null,
-            rootChildCount: root ? root.children.length : -1,
-            rootTextLen: root ? root.textContent.length : -1,
-            bg: getComputedStyle(document.body).backgroundColor,
+            bodyChildCount: document.body ? document.body.children.length : -1,
+            rootExists: !!root,
+            rootInnerLen: root ? root.innerHTML.length : -1,
+            bootType: typeof window.__DSH_BOOT__,
+            moduleLoaderType: typeof window.__ModuleLoader__,
+            dshModulesType: typeof window.__DSH_MODULES__,
+            scriptCount: document.querySelectorAll('script').length,
+            styleCount: document.querySelectorAll('style').length,
+            bodyHtml: document.body ? document.body.innerHTML.slice(0, 200) : '',
           }
         })()`).then((info) => console.log('[diag]', JSON.stringify(info)))
           .catch((e) => console.error('[diag failed]', e.message))
@@ -310,6 +314,15 @@ function openWindow() {
   win.on('closed', () => {
     win = null
     showingApp = false
+  })
+  // 诊断白屏：记录关键资源（脚本/接口/样式/websocket）的网络请求与错误。
+  const netTypes = new Set(['script', 'xhr', 'fetch', 'websocket', 'stylesheet'])
+  win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
+    if (netTypes.has(details.resourceType)) console.log(`[net] ${details.resourceType} ${details.method} ${details.url}`)
+    callback({})
+  })
+  win.webContents.session.webRequest.onErrorOccurred((details) => {
+    if (details.resourceType !== 'mainFrame') console.log(`[net error] ${details.resourceType} ${details.error} ${details.url}`)
   })
 }
 
