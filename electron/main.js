@@ -149,8 +149,9 @@ function spawnDsh(cfg) {
   const p = spawn(cfg.launchCommand, {
     cwd: cfg.launchRoot,
     shell: true,
-    stdio: 'ignore',
-    windowsHide: true,
+    // inherit：让 GUI 拉起的 dsh web 与终端里跑完全一致（日志可见，避免 stdio:ignore 破坏客户端图组合）
+    stdio: 'inherit',
+    windowsHide: false,
   })
   p.unref()
   return p
