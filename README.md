@@ -190,13 +190,33 @@ pnpm run build:exe        # electron-builder → dist/dsh-gui-trash.exe
 | `launchRoot`    | source 模式下 harness checkout 根目录                            |
 | `launchCommand` | 拉起 dsh 的命令（`pnpm dsh web` 或 `dsh web`）               |
 
-## 如何找到 harness
+## 如何找到 harness（查找优先级）
 
-源码与安装，不同的下载方法似乎有不同的方案
+启动时按这个顺序决定"从哪拉起 `dsh web`"：
 
-- **插件模式**：自动探测，你不用管位置。插件跑在 dsh 进程里，从 `process.argv[1]`（dsh 自身入口）向上找 `pnpm-workspace.yaml`。
-- **独立模式（方式二 / 三）**：默认只扫描**本插件所在目录的上一级（兄弟目录）**里有没有 harness checkout。若 harness 不在那里，就自己在 `config.json` 里填 `launchCommand` + `launchRoot`（写绝对路径即可）。
-- 移动 checkout 后重跑一次会自动更新 config.json；也可手改。
+1. **默认：自动探测兄弟文件夹**。独立模式（方式二 / 三）扫描**本插件上一级目录**里带 `pnpm-workspace.yaml` 的兄弟 checkout，例如：
+
+   ```
+   E:\dsh
+   ├── deepseek-harness\   ← 自动找到这里
+   └── dsh-gui-trash\      ← 本插件
+   ```
+
+   找到就自动写回 `config.json`（`launchMode: source` + 正确的 `launchRoot` + `pnpm dsh web`）。插件模式同理：跑在 dsh 进程里，从 `process.argv[1]` 向上找。
+
+2. **自愈**：如果 `config.json` 里的 `launchRoot` 已经失效——搬家了、原目录只剩 `.git`、或路径带空格——下次启动会**自动重新探测并纠正**，不用手动改。
+
+3. **都找不到 → 自己改**：harness 既不是兄弟目录、也没装成全局 `dsh`，就在 `config.json` 手写 `launchCommand` + `launchRoot`（绝对路径）：
+
+   ```json
+   {
+     "launchMode": "source",
+     "launchRoot": "D:\\wherever\\deepseek-harness",
+     "launchCommand": "pnpm dsh web"
+   }
+   ```
+
+   手写的 `launchCommand` 优先；`launchMode` 为 `installed` 或留空时，不会用自动探测覆盖你的手写值。
 
 ## 端口约定（重要）
 
