@@ -273,6 +273,26 @@ function openWindow() {
   })
   win.webContents.on('did-finish-load', () => {
     console.log(`[load finished] ${win.webContents.getURL()}`)
+    // 诊断白屏：加载完成后隔几秒探一下 DOM 状态。
+    if (!win.webContents.getURL().startsWith('http://127.0.0.1:')) return
+    for (const delay of [2500, 8000]) {
+      setTimeout(() => {
+        if (win === null || win.isDestroyed()) return
+        win.webContents.executeJavaScript(`(() => {
+          const root = document.getElementById('root') || document.getElementById('app') || document.body
+          return {
+            t: Date.now(),
+            readyState: document.readyState,
+            bodyLen: document.body ? document.body.innerHTML.length : -1,
+            rootTag: root ? root.tagName : null,
+            rootChildCount: root ? root.children.length : -1,
+            rootTextLen: root ? root.textContent.length : -1,
+            bg: getComputedStyle(document.body).backgroundColor,
+          }
+        })()`).then((info) => console.log('[diag]', JSON.stringify(info)))
+          .catch((e) => console.error('[diag failed]', e.message))
+      }, delay)
+    }
   })
   win.webContents.on('render-process-gone', (_event, details) => {
     console.error(`[renderer gone] reason=${details.reason}`)
