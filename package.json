@@ -1,25 +1,40 @@
 {
   "name": "dsh-gui-trash",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Desktop (Electron) GUI daemon for DeepSeek Harness: a Cordis host plugin plus a command-line launcher wrapping the existing dsh web UI.",
-  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "gui", "electron"],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "gui",
+    "electron"
+  ],
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
   "bin": {
     "dsh-gui-trash": "bin/dsh-gui-trash.js"
   },
-  "files": ["lib", "bin", "electron", "cordis.patch.yml", "image", "README.md"],
+  "files": [
+    "lib",
+    "bin",
+    "electron",
+    "cordis.patch.yml",
+    "image",
+    "README.md"
+  ],
   "scripts": {
     "dsh-gui-trash": "electron electron/",
     "start": "electron electron/",
     "build:exe": "electron-builder"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" }
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   },
   "dependencies": {
-    "electron": "^33.0.0"
+    "electron": "^43.4.0"
   },
   "devDependencies": {
     "electron-builder": "^25.0.0"
