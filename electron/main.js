@@ -31,7 +31,7 @@ const DEFAULT_CONFIG = Object.freeze({
 })
 
 const PROBE_TIMEOUT_MS = 1200
-const START_WAIT_MS = 30000
+const START_WAIT_MS = 60000
 const REVIVE_INTERVAL_MS = 3000
 
 /** 运行期可变状态。 */
@@ -152,12 +152,43 @@ function spawnDsh(cfg) {
   const p = spawn(cfg.launchCommand, {
     cwd: cfg.launchRoot,
     shell: true,
-    // inherit：让 GUI 拉起的 dsh web 与终端里跑完全一致（日志可见，避免 stdio:ignore 破坏客户端图组合）
-    stdio: 'inherit',
-    windowsHide: false,
+    // 捕获 stdout/stderr：用于探测 "dsh web: http"（host 完全就绪）信号。
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
   })
   p.unref()
+  // 累积输出以便探测就绪信号；同时透传到终端，便于排查。
+  p.dshOutput = ''
+  const onChunk = (chunk) => {
+    p.dshOutput += chunk.toString()
+    try { process.stdout.write(chunk) } catch { /* 无控制台时忽略 */ }
+  }
+  if (p.stdout) p.stdout.on('data', onChunk)
+  if (p.stderr) p.stderr.on('data', onChunk)
   return p
+}
+
+/** harness 是否打印了 "dsh web: http"（= host 完全就绪，而非仅仅端口通）。 */
+function childReadySignal() {
+  return child !== null && typeof child.dshOutput === 'string' && child.dshOutput.includes('dsh web: http')
+}
+
+/**
+ * 有界等待 harness 真正就绪：以 "dsh web: http" 日志为准。
+ * 实测 __DSH_BOOT__ 出现后约 8s host 才完全就绪，早加载会白屏。
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>}
+ */
+function waitForListening(timeoutMs) {
+  return new Promise((resolve) => {
+    const deadline = Date.now() + timeoutMs
+    const timer = setInterval(() => {
+      if (childReadySignal() || Date.now() > deadline) {
+        clearInterval(timer)
+        resolve(childReadySignal())
+      }
+    }, 300)
+  })
 }
 
 /**
@@ -197,7 +228,8 @@ async function ensureDsh() {
     child = spawnDsh(config)
     spawnedByUs = true
   }
-  await waitForPort(config.port, START_WAIT_MS)
+  // 等 host 完全就绪（dsh web: http），而不是端口一通就加载。
+  await waitForListening(START_WAIT_MS)
   return { attached: false }
 }
 
