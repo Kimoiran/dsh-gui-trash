@@ -281,6 +281,8 @@ function openWindow() {
           const root = document.getElementById('root')
           return {
             t: Date.now(),
+            href: location.href,
+            title: document.title,
             readyState: document.readyState,
             bodyLen: document.body ? document.body.innerHTML.length : -1,
             bodyChildCount: document.body ? document.body.children.length : -1,
