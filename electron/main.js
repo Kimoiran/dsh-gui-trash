@@ -130,21 +130,6 @@ function probe(port, timeoutMs = PROBE_TIMEOUT_MS) {
 }
 
 /**
- * 有界等待端口就绪。
- * @param {number} port
- * @param {number} timeoutMs
- * @returns {Promise<boolean>}
- */
-async function waitForPort(port, timeoutMs) {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    if (await probe(port, 800)) return true
-    await new Promise((resolve) => setTimeout(resolve, 400))
-  }
-  return false
-}
-
-/**
  * 拉起 dsh web。shell:true 兼容 Windows 上的 pnpm.cmd / dsh.cmd 垫片。
  * @param {Record<string, unknown>} cfg
  */
@@ -301,66 +286,14 @@ function openWindow() {
       nodeIntegration: false,
     },
   })
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+  win.webContents.on('did-fail-load', (_event, errorCode, _desc, _url, isMainFrame) => {
     // -3 = ERR_ABORTED（导航被主动取消，属正常）；其余主框架失败（如 -102 连接被拒）→ 回到加载页，由守护循环重试。
     if (errorCode === -3 || !isMainFrame) return
-    console.error(`[load failed] ${errorCode} ${errorDescription} ${validatedURL}`)
     showLoading()
-  })
-  win.webContents.on('did-finish-load', () => {
-    console.log(`[load finished] ${win.webContents.getURL()}`)
-    if (!win.webContents.getURL().startsWith('http://127.0.0.1:')) return
-    for (const delay of [2500, 8000]) {
-      setTimeout(() => {
-        if (win === null || win.isDestroyed()) return
-        win.webContents.executeJavaScript(`(() => {
-          const root = document.getElementById('root')
-          return {
-            t: Date.now(),
-            href: location.href,
-            title: document.title,
-            readyState: document.readyState,
-            bodyLen: document.body ? document.body.innerHTML.length : -1,
-            bodyChildCount: document.body ? document.body.children.length : -1,
-            rootExists: !!root,
-            rootInnerLen: root ? root.innerHTML.length : -1,
-            bootType: typeof window.__DSH_BOOT__,
-            moduleLoaderType: typeof window.__ModuleLoader__,
-            dshModulesType: typeof window.__DSH_MODULES__,
-            scriptCount: document.querySelectorAll('script').length,
-            styleCount: document.querySelectorAll('style').length,
-            bodyHtml: document.body ? document.body.innerHTML.slice(0, 200) : '',
-          }
-        })()`).then((info) => console.log('[diag]', JSON.stringify(info)))
-          .catch((e) => console.error('[diag failed]', e.message))
-      }, delay)
-    }
-  })
-  win.webContents.on('render-process-gone', (_event, details) => {
-    console.error(`[renderer gone] reason=${details.reason}`)
-  })
-  // 把渲染进程的 console 转发到终端，便于定位白屏。
-  win.webContents.on('console-message', (_event, ...rest) => {
-    let level, message, line, sourceId
-    if (rest.length === 1 && rest[0] && typeof rest[0] === 'object') {
-      level = rest[0].level; message = rest[0].message; line = rest[0].lineNumber; sourceId = rest[0].sourceId
-    } else {
-      ;[level, message, line, sourceId] = rest
-    }
-    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
   })
   win.on('closed', () => {
     win = null
     showingApp = false
-  })
-  // 诊断白屏：记录关键资源（脚本/接口/样式/websocket）的网络请求与错误。
-  const netTypes = new Set(['script', 'xhr', 'fetch', 'websocket', 'stylesheet'])
-  win.webContents.session.webRequest.onBeforeRequest((details, callback) => {
-    if (netTypes.has(details.resourceType)) console.log(`[net] ${details.resourceType} ${details.method} ${details.url}`)
-    callback({})
-  })
-  win.webContents.session.webRequest.onErrorOccurred((details) => {
-    if (details.resourceType !== 'mainFrame') console.log(`[net error] ${details.resourceType} ${details.error} ${details.url}`)
   })
 }
 
