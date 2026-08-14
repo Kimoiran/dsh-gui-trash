@@ -12,7 +12,7 @@
  */
 
 const { app, BrowserWindow, ipcMain } = require('electron')
-const { spawn, execFile } = require('node:child_process')
+const { spawn, execFileSync } = require('node:child_process')
 const http = require('node:http')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -162,7 +162,12 @@ function spawnDsh(cfg) {
  */
 function killTree(pid) {
   if (process.platform === 'win32') {
-    execFile('taskkill', ['/pid', String(pid), '/T', '/F'], () => {})
+    // 用同步版：确保 taskkill 在 Electron 退出前跑完，否则拉起的那棵 dsh web 会变孤儿。
+    try {
+      execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+    } catch {
+      /* 已退出 */
+    }
   } else {
     try {
       process.kill(-pid, 'SIGTERM')
@@ -260,10 +265,27 @@ function openWindow() {
       nodeIntegration: false,
     },
   })
-  win.webContents.on('did-fail-load', (_event, errorCode, _desc, _url, isMainFrame) => {
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     // -3 = ERR_ABORTED（导航被主动取消，属正常）；其余主框架失败（如 -102 连接被拒）→ 回到加载页，由守护循环重试。
     if (errorCode === -3 || !isMainFrame) return
+    console.error(`[load failed] ${errorCode} ${errorDescription} ${validatedURL}`)
     showLoading()
+  })
+  win.webContents.on('did-finish-load', () => {
+    console.log(`[load finished] ${win.webContents.getURL()}`)
+  })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    console.error(`[renderer gone] reason=${details.reason}`)
+  })
+  // 把渲染进程的 console 转发到终端，便于定位白屏。
+  win.webContents.on('console-message', (_event, ...rest) => {
+    let level, message, line, sourceId
+    if (rest.length === 1 && rest[0] && typeof rest[0] === 'object') {
+      level = rest[0].level; message = rest[0].message; line = rest[0].lineNumber; sourceId = rest[0].sourceId
+    } else {
+      ;[level, message, line, sourceId] = rest
+    }
+    console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`)
   })
   win.on('closed', () => {
     win = null
