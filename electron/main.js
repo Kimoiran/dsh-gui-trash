@@ -103,7 +103,9 @@ function resolveLaunch(cfg) {
 }
 
 /**
- * 对 127.0.0.1:port 做短超时 HTTP 探活。任何响应都算"在运行"。
+ * 对 127.0.0.1:port 探活。只有拿到带 `__DSH_BOOT__` 的完整 HTML
+ * （客户端图已组合好）才算"就绪"——否则会在 harness 还没 boot 完时
+ * 加载到残缺页面，前端 boot 到一半清空文档 → 白屏。
  * @param {number} port
  * @param {number} [timeoutMs]
  * @returns {Promise<boolean>}
@@ -113,8 +115,9 @@ function probe(port, timeoutMs = PROBE_TIMEOUT_MS) {
     const req = http.request(
       { host: '127.0.0.1', port, path: '/', method: 'GET', timeout: timeoutMs },
       (res) => {
-        res.resume()
-        resolve(true)
+        let body = ''
+        res.on('data', (chunk) => { body += chunk })
+        res.on('end', () => resolve(body.includes('__DSH_BOOT__')))
       },
     )
     req.on('error', () => resolve(false))
