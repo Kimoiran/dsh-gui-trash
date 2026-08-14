@@ -1,0 +1,7 @@
+{
+  "name": "dsh-gui-trash-electron",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.js"
+}

@@ -1,0 +1,11 @@
+appId: com.dsh.gui-trash
+productName: dsh-gui-trash
+directories:
+  app: electron
+  output: dist
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: ${productName}.exe

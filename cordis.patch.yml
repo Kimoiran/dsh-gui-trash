@@ -1,0 +1,13 @@
+# dsh-gui-trash：把桌面 GUI 插件挂进 web 组合。
+#
+# 本包声明了 dsh.bundle（见 package.json），`dsh plugin add` 会自动应用本补丁，
+# 无需手动 --patch 或手写挂载行。
+#
+# 步骤：
+#   1) 安装包：dsh plugin --profile web add dsh-gui-trash
+#   2) 直接启动：dsh web
+#
+# 补丁行仍保留在此，供需要手动叠加 / 覆盖的场景参考：
+- insert:
+    - id: dsh-gui-trash
+      name: dsh-gui-trash
