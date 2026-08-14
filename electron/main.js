@@ -40,6 +40,7 @@ let win = null
 let child = null
 let spawnedByUs = false
 let reviving = false
+let showingApp = false // 窗口当前是否已加载出应用（false = 加载页/失败页）
 
 function loadConfig() {
   try {
@@ -163,16 +164,23 @@ function killTree(pid) {
   }
 }
 
+/** 我们拉起的 dsh 进程是否仍在运行（启动中或已就绪）。 */
+function isChildAlive() {
+  return child !== null && child.exitCode === null && child.signalCode === null
+}
+
 /**
  * 确保存在一个 dsh web：附着或拉起。
  * @returns {Promise<{attached: boolean}>}
  */
 async function ensureDsh() {
   if (await probe(config.port)) return { attached: true }
-  child = spawnDsh(config)
-  spawnedByUs = true
+  // 上一个子进程还在启动/运行，就别再 spawn 第二个去抢 3080 端口。
+  if (!isChildAlive()) {
+    child = spawnDsh(config)
+    spawnedByUs = true
+  }
   await waitForPort(config.port, START_WAIT_MS)
-  // 拉不起来也照常开窗：窗口会显示连接错误，守护循环会继续重试。
   return { attached: false }
 }
 
@@ -192,6 +200,31 @@ function applyTheme(dark) {
 }
 
 ipcMain.on('gui-theme-changed', (_event, dark) => applyTheme(Boolean(dark)))
+
+/** 服务未就绪时的过渡加载页（内联 data URL，不依赖网络）。 */
+const LOADING_HTML = [
+  '<!doctype html><html><head><meta charset="utf-8"><style>',
+  'html,body{height:100%;margin:0;display:flex;align-items:center;justify-content:center;',
+  'font-family:system-ui,"Segoe UI",sans-serif;background:#1e1e1e;color:#d4d4d4;user-select:none}',
+  '.box{text-align:center}.sp{width:28px;height:28px;border:3px solid #3c3c3c;',
+  'border-top-color:#d4d4d4;border-radius:50%;margin:0 auto 16px;animation:r .8s linear infinite}',
+  '@keyframes r{to{transform:rotate(360deg)}}',
+  '</style></head><body><div class="box"><div class="sp"></div>',
+  '<div>正在启动 DeepSeek Harness…</div></div></body></html>',
+].join('')
+const LOADING_URL = `data:text/html;charset=utf-8,${encodeURIComponent(LOADING_HTML)}`
+
+function showLoading() {
+  showingApp = false
+  if (win !== null && !win.isDestroyed()) win.loadURL(LOADING_URL)
+}
+
+/** 切到真实应用地址。 */
+function loadApp() {
+  if (win === null || win.isDestroyed()) return
+  win.loadURL(`http://127.0.0.1:${config.port}/`)
+  showingApp = true
+}
 
 function openWindow() {
   if (win !== null) {
@@ -219,21 +252,32 @@ function openWindow() {
       nodeIntegration: false,
     },
   })
-  win.loadURL(`http://127.0.0.1:${config.port}/`)
+  win.webContents.on('did-fail-load', (_event, errorCode, _desc, _url, isMainFrame) => {
+    // -3 = ERR_ABORTED（导航被主动取消，属正常）；其余主框架失败（如 -102 连接被拒）→ 回到加载页，由守护循环重试。
+    if (errorCode === -3 || !isMainFrame) return
+    showLoading()
+  })
   win.on('closed', () => {
     win = null
+    showingApp = false
   })
 }
 
 function startReviveLoop() {
   setInterval(async () => {
     if (reviving) return
-    if (await probe(config.port)) return
-    reviving = true
-    try {
-      await ensureDsh()
-    } finally {
-      reviving = false
+    const up = await probe(config.port)
+    if (!up) {
+      reviving = true
+      try {
+        await ensureDsh()
+      } finally {
+        reviving = false
+      }
+    }
+    // 服务已就绪但窗口还没显示应用（加载页/失败页）→ 切到真实地址。
+    if (win !== null && !win.isDestroyed() && !showingApp && (await probe(config.port))) {
+      loadApp()
     }
   }, REVIVE_INTERVAL_MS)
 }
@@ -254,6 +298,8 @@ async function main() {
   }
   await ensureDsh()
   openWindow()
+  if (await probe(config.port)) loadApp()
+  else showLoading()
   startReviveLoop()
 }
 
