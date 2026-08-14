@@ -81,17 +81,25 @@ function detectHarnessCheckout() {
   return undefined
 }
 
+/** 目录是不是一个有效的 harness checkout（含 pnpm-workspace.yaml）。 */
+function isHarnessCheckout(dir) {
+  return typeof dir === 'string' && dir.length > 0 && fs.existsSync(path.join(dir, 'pnpm-workspace.yaml'))
+}
+
 /**
- * 解析"指向哪个 dsh"：显式 launchCommand 优先；否则向上看有没有 harness checkout。
+ * 解析"指向哪个 dsh"：显式 launchCommand 优先；但 source 模式的 launchRoot
+ * 失效（目录被迁移 / 只剩 .git / 路径带空格）时，自动重新探测并纠正。
  * @param {Record<string, unknown>} cfg
  */
 function resolveLaunch(cfg) {
-  if (cfg.launchCommand) return cfg
+  // 配置仍有效：非 source 模式（installed / 手写命令），或 source 的 launchRoot 指向真 checkout。
+  const cfgValid = cfg.launchCommand && (cfg.launchMode !== 'source' || isHarnessCheckout(cfg.launchRoot))
+  if (cfgValid) return cfg
   const checkout = detectHarnessCheckout()
   if (checkout !== undefined) {
     return { ...cfg, launchMode: 'source', launchRoot: checkout, launchCommand: 'pnpm dsh web' }
   }
-  return { ...cfg, launchMode: 'installed', launchRoot: undefined, launchCommand: 'dsh web' }
+  return { ...cfg, launchMode: 'installed', launchRoot: undefined, launchCommand: cfg.launchCommand || 'dsh web' }
 }
 
 /**
@@ -263,22 +271,28 @@ function openWindow() {
   })
 }
 
-function startReviveLoop() {
-  setInterval(async () => {
-    if (reviving) return
-    const up = await probe(config.port)
-    if (!up) {
-      reviving = true
-      try {
-        await ensureDsh()
-      } finally {
-        reviving = false
-      }
+/**
+ * 单次同步：探测 → 没在跑就拉起 → 就绪且窗口未显示应用则切到真实地址。
+ * 被 reviving 标志串行化，避免 interval 与首次调用并发 spawn。
+ */
+async function syncWindow() {
+  if (reviving) return
+  reviving = true
+  try {
+    if (!(await probe(config.port))) {
+      await ensureDsh()
     }
-    // 服务已就绪但窗口还没显示应用（加载页/失败页）→ 切到真实地址。
     if (win !== null && !win.isDestroyed() && !showingApp && (await probe(config.port))) {
       loadApp()
     }
+  } finally {
+    reviving = false
+  }
+}
+
+function startReviveLoop() {
+  setInterval(() => {
+    syncWindow()
   }, REVIVE_INTERVAL_MS)
 }
 
@@ -296,11 +310,11 @@ async function main() {
     app.quit()
     return
   }
-  await ensureDsh()
+  // 立即开窗显示加载页，再在后台附着/拉起 harness，就绪后自动切到应用。
   openWindow()
-  if (await probe(config.port)) loadApp()
-  else showLoading()
+  showLoading()
   startReviveLoop()
+  await syncWindow()
 }
 
 const gotLock = app.requestSingleInstanceLock()
