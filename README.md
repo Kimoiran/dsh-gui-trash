@@ -144,7 +144,7 @@ npx dsh-gui-trash
 ---
 
 ## 方式三：打包 exe（可选）
-
+注：目前不保证能够正常运行，我还是建议在trash目录使用pnpm dsh-gui-trash，或者写个脚本什么的，exe目前不太稳定，后续我可能会改（如果我能想起来的话）
 ```sh
 cd dsh-gui-trash
 pnpm install
